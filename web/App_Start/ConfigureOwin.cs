@@ -9,7 +9,7 @@ using System.Web.Http.Dispatcher;
 
 namespace web
 {
-    public class ConfigureOwin
+    public partial class ConfigureOwin
     {
         public void Configure(IAppBuilder appBuilder)
         {
@@ -25,6 +25,7 @@ namespace web
                 defaults: new { id = RouteParameter.Optional }
             );
 
+            ConfigureAuth(appBuilder);
             appBuilder.UseWebApi(config);
         }
     }

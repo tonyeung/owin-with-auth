@@ -7,6 +7,7 @@ using System.Web.Http;
 
 namespace web.Controllers
 {
+    [Authorize]
     public class TestController : ApiController
     {
         private readonly ISample sample;
