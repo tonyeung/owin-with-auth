@@ -23,9 +23,10 @@ namespace web
                 name: "DefaultApi",
                 routeTemplate: "api/{controller}/{id}",
                 defaults: new { id = RouteParameter.Optional }
-            );
+            ); ;
 
-            ConfigureAuth(appBuilder);
+            ConfigureOAuth(appBuilder);
+            appBuilder.UseCors(Microsoft.Owin.Cors.CorsOptions.AllowAll);
             appBuilder.UseWebApi(config);
         }
     }
