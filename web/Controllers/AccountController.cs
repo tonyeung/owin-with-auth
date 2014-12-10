@@ -12,11 +12,20 @@ using System.Web.Http;
 using Newtonsoft.Json.Linq;
 using System.Security.Claims;
 using Microsoft.Owin.Security.OAuth;
+using web.Models;
+using BrockAllen.IdentityReboot;
 
 namespace web.Controllers
 {
+    /// <summary>
+    /// This class only contains methods to authenticate via google
+    /// username/password authentication occurs in the SimpleAuthorizationServerProvider class in the /App_Start/Authentication.cs file
+    /// the url for username/password authentication is /token
+    /// </summary>
     public class AccountController : ApiController
     {
+
+
         [OverrideAuthentication]
         [HostAuthentication(DefaultAuthenticationTypes.ExternalCookie)]
         [AllowAnonymous]
@@ -28,7 +37,9 @@ namespace web.Controllers
                 return new ChallengeResult("Google", this);
             }
 
-            //var userstore = new UserStore
+            var usermanager = new IdentityRebootUserManager<User>(new UserStore());
+
+            var idResult = await usermanager.CreateAsync(new User() { UserName = "User" }, "password");
 
             return Ok(GenerateLocalAccessTokenResponse("sumuser"));
         }
@@ -53,12 +64,10 @@ namespace web.Controllers
             var accessToken = ConfigureOwin.OAuthBearerOptions.AccessTokenFormat.Protect(ticket);
 
             JObject tokenResponse = new JObject(
-                                        new JProperty("userName", userName),
                                         new JProperty("access_token", accessToken),
                                         new JProperty("token_type", "bearer"),
-                                        new JProperty("expires_in", tokenExpiration.TotalSeconds.ToString()),
-                                        new JProperty(".issued", ticket.Properties.IssuedUtc.ToString()),
-                                        new JProperty(".expires", ticket.Properties.ExpiresUtc.ToString())
+                                        new JProperty("expires_in", tokenExpiration.TotalSeconds.ToString()
+                                        )
             );
 
             return tokenResponse;

@@ -34,6 +34,9 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="BrockAllen.IdentityReboot">
+      <HintPath>..\packages\BrockAllen.IdentityReboot.2.0.0\lib\net45\BrockAllen.IdentityReboot.dll</HintPath>
+    </Reference>
     <Reference Include="Microsoft.AspNet.Identity.Core">
       <HintPath>..\packages\Microsoft.AspNet.Identity.Core.2.1.0\lib\net45\Microsoft.AspNet.Identity.Core.dll</HintPath>
     </Reference>
@@ -116,6 +119,8 @@
     <Compile Include="Controllers\ValuesController.cs" />
     <Compile Include="DependencyInjection\StructureMapHttpControllerActivator.cs" />
     <Compile Include="DependencyInjection\IoC.cs" />
+    <Compile Include="Models\User.cs" />
+    <Compile Include="Models\UserStore.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="App_Start\StartUpOwin.cs" />

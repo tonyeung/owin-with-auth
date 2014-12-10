@@ -1,4 +1,5 @@
-﻿using Microsoft.Owin;
+﻿using BrockAllen.IdentityReboot;
+using Microsoft.Owin;
 using Microsoft.Owin.Security;
 using Microsoft.Owin.Security.Cookies;
 using Microsoft.Owin.Security.Google;
@@ -10,6 +11,7 @@ using System.Linq;
 using System.Security.Claims;
 using System.Text;
 using System.Threading.Tasks;
+using web.Models;
 
 namespace web
 {
@@ -66,6 +68,7 @@ namespace web
             app.UseGoogleAuthentication(googleAuthOptions);            
         }
     }
+
     public class SimpleAuthorizationServerProvider : OAuthAuthorizationServerProvider
     {
         public override async Task ValidateClientAuthentication(OAuthValidateClientAuthenticationContext context)
@@ -78,16 +81,14 @@ namespace web
 
             context.OwinContext.Response.Headers.Add("Access-Control-Allow-Origin", new[] { "*" });
 
-            //using (AuthRepository _repo = new AuthRepository())
-            //{
-            //    IdentityUser user = await _repo.FindUser(context.UserName, context.Password);
+            var usermanager = new IdentityRebootUserManager<User>(new UserStore());
 
-            //    if (user == null)
-            //    {
-            //        context.SetError("invalid_grant", "The user name or password is incorrect.");
-            //        return;
-            //    }
-            //}
+            var user = await usermanager.FindAsync(context.UserName, context.Password);
+            if (user == null)
+            {
+                context.SetError("invalid_grant", "The user name or password is incorrect.");
+                return;
+            }
 
             var identity = new ClaimsIdentity(context.Options.AuthenticationType);
             identity.AddClaim(new Claim("sub", context.UserName));
