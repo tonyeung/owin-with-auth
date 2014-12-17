@@ -64,19 +64,19 @@ namespace web.Models
 
         public async Task<string> GetPasswordHashAsync(User user)
         {
-            Console.WriteLine("DeleteAsync user");
+            Console.WriteLine("GetPasswordHashAsync user");
             return "1F400.AOcgsxDHtYNiyQIQ01JF0oqjw1JNwF5+ug/qng3VzgVEstu8JaAIIfIrlI4FoVinRw==";
         }
 
         public async Task<bool> HasPasswordAsync(User user)
         {
-            Console.WriteLine("DeleteAsync user");
+            Console.WriteLine("HasPasswordAsync user");
             return true;
         }
 
         public async Task SetPasswordHashAsync(User user, string passwordHash)
         {
-            Console.WriteLine("passwordhash");
+            Console.WriteLine("SetPasswordHashAsync");
             Console.WriteLine(passwordHash);
         }
     }

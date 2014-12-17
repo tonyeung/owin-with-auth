@@ -3,6 +3,7 @@ using Microsoft.Owin;
 using Microsoft.Owin.Security;
 using Microsoft.Owin.Security.Cookies;
 using Microsoft.Owin.Security.Google;
+using Microsoft.Owin.Security.Infrastructure;
 using Microsoft.Owin.Security.OAuth;
 using Owin;
 using System;
@@ -20,25 +21,6 @@ namespace web
         public static GoogleOAuth2AuthenticationOptions googleAuthOptions { get; private set; }
         public static OAuthBearerAuthenticationOptions OAuthBearerOptions { get; private set; }
 
-        //public void ConfigureAuth(IAppBuilder app)
-        //{
-        //    var cookieOptions = new CookieAuthenticationOptions
-        //    {
-        //        LoginPath = new PathString("/api/Account/Login")
-        //    };
-
-        //    app.UseCookieAuthentication(cookieOptions);
-        //    app.SetDefaultSignInAsAuthenticationType(cookieOptions.AuthenticationType);
-            
-        //    googleAuthOptions = new GoogleOAuth2AuthenticationOptions()
-        //    {
-        //        ClientId = "689994060053-m7o6obf8l89fgvj19p4u4kjtvvfrn47i.apps.googleusercontent.com",
-        //        ClientSecret = "CRpFhh5JkKVTHXkgFeB3U0s4"
-        //    };
-        //    app.UseGoogleAuthentication(googleAuthOptions);
-        //}
-
-
         public void ConfigureOAuth(IAppBuilder app)
         {
 
@@ -50,8 +32,9 @@ namespace web
 
                 AllowInsecureHttp = true,
                 TokenEndpointPath = new PathString("/token"),
-                AccessTokenExpireTimeSpan = TimeSpan.FromMinutes(30),
-                Provider = new SimpleAuthorizationServerProvider()
+                AccessTokenExpireTimeSpan = TimeSpan.FromMinutes(1),
+                Provider = new SimpleAuthorizationServerProvider(),
+                RefreshTokenProvider = new SimpleRefreshTokenProvider()
             };
 
             // Token Generation
@@ -71,15 +54,74 @@ namespace web
 
     public class SimpleAuthorizationServerProvider : OAuthAuthorizationServerProvider
     {
-        public override async Task ValidateClientAuthentication(OAuthValidateClientAuthenticationContext context)
+        public override Task ValidateClientAuthentication(OAuthValidateClientAuthenticationContext context)
         {
+            string clientId = string.Empty;
+            string clientSecret = string.Empty;
+            Client client = null;
+
+            if (!context.TryGetBasicCredentials(out clientId, out clientSecret))
+            {
+                context.TryGetFormCredentials(out clientId, out clientSecret);
+            }
+
+            if (context.ClientId == null)
+            {
+                context.Validated();
+                context.SetError("invalid_clientId", "ClientId should be sent.");
+                return Task.FromResult<object>(null);
+            }
+
+            //get the client from.. somewhere
+            client = new Client()
+            {
+                Active = true,
+                RefreshTokenLifeTime = 612
+            };
+
+            if (client == null)
+            {
+                context.SetError("invalid_clientId", string.Format("Client '{0}' is not registered in the system.", context.ClientId));
+                return Task.FromResult<object>(null);
+            }
+
+            //if (client.ApplicationType == "Not JavaScript")
+            //{
+            //    if (string.IsNullOrWhiteSpace(clientSecret))
+            //    {
+            //        context.SetError("invalid_clientId", "Client secret should be sent.");
+            //        return Task.FromResult<object>(null);
+            //    }
+            //    else
+            //    {
+            //        if (client.Secret != Helper.GetHash(clientSecret))
+            //        {
+            //            context.SetError("invalid_clientId", "Client secret is invalid.");
+            //            return Task.FromResult<object>(null);
+            //        }
+            //    }
+            //}
+
+            if (!client.Active)
+            {
+                context.SetError("invalid_clientId", "Client is inactive.");
+                return Task.FromResult<object>(null);
+            }
+
+            context.OwinContext.Set<string>("as:clientAllowedOrigin", client.AllowedOrigin);
+            context.OwinContext.Set<string>("as:clientRefreshTokenLifeTime", client.RefreshTokenLifeTime.ToString());
+
             context.Validated();
+            return Task.FromResult<object>(null);
         }
 
         public override async Task GrantResourceOwnerCredentials(OAuthGrantResourceOwnerCredentialsContext context)
         {
+            var allowedOrigin = context.OwinContext.Get<string>("as:clientAllowedOrigin");
 
-            context.OwinContext.Response.Headers.Add("Access-Control-Allow-Origin", new[] { "*" });
+            if (allowedOrigin == null) allowedOrigin = "*";
+
+            context.OwinContext.Response.Headers.Add("Access-Control-Allow-Origin", new[] { allowedOrigin });
 
             var usermanager = new IdentityRebootUserManager<User>(new UserStore());
 
@@ -91,10 +133,129 @@ namespace web
             }
 
             var identity = new ClaimsIdentity(context.Options.AuthenticationType);
+            identity.AddClaim(new Claim(ClaimTypes.Name, context.UserName));
+            identity.AddClaim(new Claim(ClaimTypes.Role, "user"));
             identity.AddClaim(new Claim("sub", context.UserName));
-            identity.AddClaim(new Claim("role", "user"));
 
-            context.Validated(identity);
+            var props = new AuthenticationProperties(new Dictionary<string, string>
+                {
+                    { 
+                        "as:client_id", (context.ClientId == null) ? string.Empty : context.ClientId
+                    },
+                    { 
+                        "userName", context.UserName
+                    }
+                });
+
+            var ticket = new AuthenticationTicket(identity, props);
+            context.Validated(ticket);
+        }
+
+        public override Task TokenEndpoint(OAuthTokenEndpointContext context)
+        {
+            foreach (KeyValuePair<string, string> property in context.Properties.Dictionary)
+            {
+                context.AdditionalResponseParameters.Add(property.Key, property.Value);
+            }
+
+            return Task.FromResult<object>(null);
+        }
+
+        public override Task GrantRefreshToken(OAuthGrantRefreshTokenContext context)
+        {
+            var originalClient = context.Ticket.Properties.Dictionary["as:client_id"];
+            var currentClient = context.ClientId;
+
+            if (originalClient != currentClient)
+            {
+                context.SetError("invalid_clientId", "Refresh token is issued to a different clientId.");
+                return Task.FromResult<object>(null);
+            }
+
+            // Change auth ticket for refresh token requests
+            var newIdentity = new ClaimsIdentity(context.Ticket.Identity);
+
+            var newClaim = newIdentity.Claims.Where(c => c.Type == "newClaim").FirstOrDefault();
+            if (newClaim != null)
+            {
+                newIdentity.RemoveClaim(newClaim);
+            }
+            newIdentity.AddClaim(new Claim("newClaim", "newValue"));
+
+            var newTicket = new AuthenticationTicket(newIdentity, context.Ticket.Properties);
+            context.Validated(newTicket);
+
+            return Task.FromResult<object>(null);
+        }
+    }
+
+
+    public class SimpleRefreshTokenProvider : IAuthenticationTokenProvider
+    {
+        public async Task CreateAsync(AuthenticationTokenCreateContext context)
+        {
+            var clientid = context.Ticket.Properties.Dictionary["as:client_id"];
+
+            if (string.IsNullOrEmpty(clientid))
+            {
+                return;
+            }
+
+            var refreshTokenId = Guid.NewGuid().ToString("n");
+
+            var refreshTokenLifeTime = context.OwinContext.Get<string>("as:clientRefreshTokenLifeTime");
+
+            var token = new RefreshToken()
+            {
+                Id = "4b6539959fdb47e1bce834335ee05d47", //refreshTokenId, //hash this
+                ClientId = clientid,
+                Subject = context.Ticket.Identity.Name,
+                IssuedUtc = DateTime.UtcNow,
+                ExpiresUtc = DateTime.UtcNow.AddMinutes(Convert.ToDouble(refreshTokenLifeTime))
+            };
+
+            context.Ticket.Properties.IssuedUtc = token.IssuedUtc;
+            context.Ticket.Properties.ExpiresUtc = token.ExpiresUtc;
+
+            token.ProtectedTicket = context.SerializeTicket();
+
+            var result = true;// await _repo.AddRefreshToken(token);
+
+            if (result)
+            {
+                context.SetToken(refreshTokenId);
+            }
+        }
+
+        public async Task ReceiveAsync(AuthenticationTokenReceiveContext context)
+        {
+
+            var allowedOrigin = context.OwinContext.Get<string>("as:clientAllowedOrigin");
+            context.OwinContext.Response.Headers.Add("Access-Control-Allow-Origin", new[] { allowedOrigin });
+
+
+            //string hashedTokenId = Helper.GetHash(context.Token);
+
+            var refreshToken = new RefreshToken();//await _repo.FindRefreshToken(hashedTokenId);
+
+            refreshToken.ProtectedTicket = @"AQAAANCMnd8BFdERjHoAwE_Cl-sBAAAAqTbDYaNDeEGmNiNWmmHvpQAAAAACAAAAAAAQZgAAAAEAACAAAABTJq-Icxqda1wQwu8HmPpUzkiqaxx5JWQ4YrMv6WNqTwAAAAAOgAAAAAIAACAAAACGEvXIy9XshwvjTuuRcn6xx1IGFKXI9xzVIKH2RA6rJdAAAADwQ08N1K1UkRM30y6mg4MAscvYy2ecNuI2d7h6U3bRf3ImMH7kHHq1L4gbXkq3PXZzsxXY8_BtlSnz7Q73PnuI04jCF7aJjtwUqGhxpUBdEDRKiy6T4gSMyjizOF3QsoHKZb6VpmS_eyxafHTTSn18JgQwqHROpREYE7l2ILZs0Zc-FFoIjI2XQgj8Q1eJm4ZtaZjDLFO_e00qe6xFDhAoPWsrYVUSFFFIb24rFqH7XT8t8r_-L9l3tughiy1bv5PQuTRa1CkJjY-L34vanLNLQAAAADlrVh7ZgpwXaMY8GPHNvxP7uJKaJFQgF377rZbT1W9MnpB8Gl2y8N7go4x8xZSHdNnvmdwT3gV3lXCynRskekk";
+
+            if (refreshToken != null)
+            {
+                //Get protectedTicket from refreshToken class
+                context.DeserializeTicket(refreshToken.ProtectedTicket);
+                //var result = await _repo.RemoveRefreshToken(hashedTokenId);
+            }
+        }
+
+        public void Create(AuthenticationTokenCreateContext context)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void Receive(AuthenticationTokenReceiveContext context)
+        {
+            throw new NotImplementedException();
         }
     }
 
